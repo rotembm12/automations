@@ -25,14 +25,10 @@ export async function postVideoAlert(video: VideoMetadata): Promise<void> {
 
   await slack.chat.postMessage({
     channel: process.env.SLACK_AI_VIDEOS_CHANNEL ?? "#ai-videos",
-    text: `New Claude Code video: ${video.title}`,
+    text: video.title,
     unfurl_links: false,
     unfurl_media: false,
     blocks: [
-      {
-        type: "header",
-        text: { type: "plain_text", text: "New Claude Code Video" },
-      },
       {
         type: "section",
         text: {
