@@ -68,18 +68,25 @@ async function handleCreatorFetch(channel: string, creator: string, query: strin
     return;
   }
 
-  if (videos.length === 0) {
-    await slack.chat.postMessage({ channel, text: `No videos found for *${query}* by *${creator}*.` });
+  const state = readState();
+  const seenIds = new Set(state.seenIds);
+  const newVideos = videos.filter((v) => !seenIds.has(v.id));
+
+  if (newVideos.length === 0) {
+    await slack.chat.postMessage({ channel, text: `No new videos found for *${query}* by *${creator}* — all already posted.` });
     return;
   }
 
-  for (const video of videos) {
+  for (const video of newVideos) {
     try {
       await postVideoAlert(video);
+      seenIds.add(video.id);
     } catch (err) {
       console.error(`Failed to post ${video.id}:`, err);
     }
   }
+
+  writeState({ ...state, seenIds: [...seenIds] });
 }
 
 async function resolveChannelId(nameOrId: string): Promise<string | undefined> {
