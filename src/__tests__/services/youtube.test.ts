@@ -32,11 +32,12 @@ function searchItem(videoId: string, channelId: string) {
   };
 }
 
-function videoDetail(videoId: string, duration = "PT10M0S", viewCount = "1000") {
+function videoDetail(videoId: string, duration = "PT10M0S", viewCount = "1000", lang?: string) {
   return {
     id: videoId,
     statistics: { viewCount },
     contentDetails: { duration },
+    snippet: lang ? { defaultAudioLanguage: lang } : {},
   };
 }
 
@@ -147,6 +148,46 @@ describe("fetchNewClaudeCodeVideos", () => {
       .mockResolvedValueOnce(okJson({ items: [channelDetail("ch1", "5000")] }));
     const result = await fetchNewClaudeCodeVideos("2024-01-01T00:00:00.000Z", new Set());
     expect(result[0].thumbnailUrl).toBe("https://img.youtube.com/high.jpg");
+  });
+});
+
+describe("language filtering", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("includes English videos (en)", async () => {
+    setupFetchMocks([searchItem("vid1", "ch1")], [videoDetail("vid1", "PT5M", "100", "en")], [channelDetail("ch1", "5000")]);
+    const result = await fetchNewClaudeCodeVideos("2024-01-01T00:00:00.000Z", new Set());
+    expect(result).toHaveLength(1);
+  });
+
+  it("includes English videos with region tag (en-US)", async () => {
+    setupFetchMocks([searchItem("vid1", "ch1")], [videoDetail("vid1", "PT5M", "100", "en-US")], [channelDetail("ch1", "5000")]);
+    const result = await fetchNewClaudeCodeVideos("2024-01-01T00:00:00.000Z", new Set());
+    expect(result).toHaveLength(1);
+  });
+
+  it("includes Hebrew videos (he)", async () => {
+    setupFetchMocks([searchItem("vid1", "ch1")], [videoDetail("vid1", "PT5M", "100", "he")], [channelDetail("ch1", "5000")]);
+    const result = await fetchNewClaudeCodeVideos("2024-01-01T00:00:00.000Z", new Set());
+    expect(result).toHaveLength(1);
+  });
+
+  it("includes Hebrew videos with legacy code (iw)", async () => {
+    setupFetchMocks([searchItem("vid1", "ch1")], [videoDetail("vid1", "PT5M", "100", "iw")], [channelDetail("ch1", "5000")]);
+    const result = await fetchNewClaudeCodeVideos("2024-01-01T00:00:00.000Z", new Set());
+    expect(result).toHaveLength(1);
+  });
+
+  it("excludes videos in other languages (es, fr, de...)", async () => {
+    setupFetchMocks([searchItem("vid1", "ch1")], [videoDetail("vid1", "PT5M", "100", "es")], [channelDetail("ch1", "5000")]);
+    const result = await fetchNewClaudeCodeVideos("2024-01-01T00:00:00.000Z", new Set());
+    expect(result).toHaveLength(0);
+  });
+
+  it("includes videos with no language set (assume English)", async () => {
+    setupFetchMocks([searchItem("vid1", "ch1")], [videoDetail("vid1")], [channelDetail("ch1", "5000")]);
+    const result = await fetchNewClaudeCodeVideos("2024-01-01T00:00:00.000Z", new Set());
+    expect(result).toHaveLength(1);
   });
 });
 

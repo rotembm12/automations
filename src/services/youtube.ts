@@ -2,6 +2,13 @@ import { VideoMetadata } from "../types";
 
 const BASE_URL = "https://www.googleapis.com/youtube/v3";
 const MIN_SUBSCRIBERS = 1_000;
+const ALLOWED_LANGUAGES = ["en", "iw", "he"]; // English, Hebrew (iw = legacy ISO code)
+
+function isAllowedLanguage(lang: string | undefined): boolean {
+  if (!lang) return true; // not set → assume English, include it
+  const base = lang.toLowerCase().split("-")[0];
+  return ALLOWED_LANGUAGES.includes(base);
+}
 
 async function ytFetch(endpoint: string, params: Record<string, string>): Promise<any> {
   const url = new URL(`${BASE_URL}/${endpoint}`);
@@ -54,7 +61,7 @@ export async function fetchNewClaudeCodeVideos(
 
   // 2. Fetch video details + channel subscriber counts in parallel
   const [videosData, channelsData] = await Promise.all([
-    ytFetch("videos", { part: "statistics,contentDetails", id: videoIds }),
+    ytFetch("videos", { part: "statistics,contentDetails,snippet", id: videoIds }),
     ytFetch("channels", { part: "statistics", id: channelIds }),
   ]);
 
@@ -78,7 +85,11 @@ export async function fetchNewClaudeCodeVideos(
     // Filter out small channels
     if (subscriberCount < MIN_SUBSCRIBERS) continue;
 
+    // Filter out non-English/Hebrew videos
     const details = detailsMap.get(videoId);
+    const lang = details?.snippet?.defaultAudioLanguage ?? details?.snippet?.defaultLanguage;
+    if (!isAllowedLanguage(lang)) continue;
+
     const viewCount = parseInt(details?.statistics?.viewCount ?? "0");
     const duration = formatDuration(details?.contentDetails?.duration ?? "PT0S");
     const thumbnail =
