@@ -23,19 +23,16 @@ export async function createLeadCard(lead: LeadFormSubmission): Promise<string> 
         rich_text: [{ text: { content: lead.jobTitle ?? "" } }],
       },
       "Company Size": {
-        select: lead.companySize ? { name: lead.companySize } : null,
+        rich_text: [{ text: { content: lead.companySize ?? "" } }],
       },
       Source: {
-        select: lead.source ? { name: lead.source } : null,
+        rich_text: [{ text: { content: lead.source ?? "" } }],
       },
       Interest: {
         rich_text: [{ text: { content: lead.interest ?? "" } }],
       },
       Status: {
-        select: { name: "New" },
-      },
-      "Submitted At": {
-        date: { start: lead.submittedAt },
+        status: { name: "New" },
       },
     },
   });

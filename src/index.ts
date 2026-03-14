@@ -15,6 +15,7 @@ app.post("/webhook/lead", async (req: Request, res: Response) => {
     return;
   }
 
+  console.log("Im looking at your lead...")
   const lead: LeadFormSubmission = {
     name: req.body.name,
     company: req.body.company,
