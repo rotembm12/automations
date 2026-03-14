@@ -36,6 +36,76 @@ function formatDuration(iso: string): string {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+export async function fetchCreatorVideos(creator: string, query: string): Promise<VideoMetadata[]> {
+  // 1. Find the creator's channel
+  const channelSearch = await ytFetch("search", {
+    part: "snippet",
+    q: creator,
+    type: "channel",
+    maxResults: "1",
+  });
+
+  const channelItem = channelSearch.items?.[0];
+  if (!channelItem) return [];
+
+  const channelId: string = channelItem.id.channelId;
+  const channelTitle: string = channelItem.snippet.title;
+
+  // 2. Search latest 5 videos on that channel matching the query
+  const searchData = await ytFetch("search", {
+    part: "snippet",
+    q: query,
+    type: "video",
+    channelId,
+    order: "date",
+    maxResults: "5",
+  });
+
+  const items: any[] = searchData.items ?? [];
+  if (items.length === 0) return [];
+
+  const videoIds = items.map((item: any) => item.id.videoId).join(",");
+
+  // 3. Fetch video details + channel subscriber count in parallel
+  const [videosData, channelsData] = await Promise.all([
+    ytFetch("videos", { part: "statistics,contentDetails", id: videoIds }),
+    ytFetch("channels", { part: "statistics", id: channelId }),
+  ]);
+
+  const subscriberCount = parseInt(channelsData.items?.[0]?.statistics?.subscriberCount ?? "0");
+
+  const detailsMap = new Map<string, any>();
+  for (const v of videosData.items ?? []) {
+    detailsMap.set(v.id, v);
+  }
+
+  return items.map((item: any) => {
+    const videoId: string = item.id.videoId;
+    const details = detailsMap.get(videoId);
+    const viewCount = parseInt(details?.statistics?.viewCount ?? "0");
+    const duration = formatDuration(details?.contentDetails?.duration ?? "PT0S");
+    const thumbnail =
+      item.snippet.thumbnails?.maxres?.url ??
+      item.snippet.thumbnails?.high?.url ??
+      item.snippet.thumbnails?.default?.url ??
+      "";
+
+    return {
+      id: videoId,
+      title: item.snippet.title,
+      description: item.snippet.description,
+      channelId,
+      channelTitle,
+      publishedAt: item.snippet.publishedAt,
+      thumbnailUrl: thumbnail,
+      videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
+      duration,
+      viewCount,
+      subscriberCount,
+    };
+  });
+}
+
 export async function fetchNewClaudeCodeVideos(
   publishedAfter: string,
   seenIds: Set<string>

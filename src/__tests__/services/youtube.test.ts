@@ -3,7 +3,7 @@ global.fetch = mockFetch as any;
 
 process.env.YOUTUBE_API_KEY = "test-api-key";
 
-import { fetchNewClaudeCodeVideos } from "../../services/youtube";
+import { fetchNewClaudeCodeVideos, fetchCreatorVideos } from "../../services/youtube";
 
 // ---- helpers ----
 
@@ -188,6 +188,65 @@ describe("language filtering", () => {
     setupFetchMocks([searchItem("vid1", "ch1")], [videoDetail("vid1")], [channelDetail("ch1", "5000")]);
     const result = await fetchNewClaudeCodeVideos("2024-01-01T00:00:00.000Z", new Set());
     expect(result).toHaveLength(1);
+  });
+});
+
+describe("fetchCreatorVideos", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  function channelSearchItem(channelId: string, title: string) {
+    return { id: { channelId }, snippet: { title } };
+  }
+
+  // 4-call setup: channel search → video search → videos detail + channel stats (parallel)
+  function setupCreatorMocks(channelItems: any[], videoItems: any[], videoDetails: any[], subscriberCount: string) {
+    mockFetch
+      .mockResolvedValueOnce(okJson({ items: channelItems }))
+      .mockResolvedValueOnce(okJson({ items: videoItems }))
+      .mockResolvedValueOnce(okJson({ items: videoDetails }))
+      .mockResolvedValueOnce(okJson({ items: [{ id: "ch1", statistics: { subscriberCount } }] }));
+  }
+
+  it("returns empty array when channel is not found", async () => {
+    mockFetch.mockResolvedValueOnce(okJson({ items: [] }));
+    const result = await fetchCreatorVideos("unknowncreator", "claude code");
+    expect(result).toEqual([]);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns empty array when no videos found on the channel", async () => {
+    mockFetch
+      .mockResolvedValueOnce(okJson({ items: [channelSearchItem("ch1", "Fireship")] }))
+      .mockResolvedValueOnce(okJson({ items: [] }));
+    const result = await fetchCreatorVideos("fireship", "claude code");
+    expect(result).toEqual([]);
+  });
+
+  it("returns up to 5 videos with correct metadata", async () => {
+    const videos = ["v1", "v2", "v3"].map((id) => searchItem(id, "ch1"));
+    const details = ["v1", "v2", "v3"].map((id) => videoDetail(id, "PT10M", "500"));
+    setupCreatorMocks([channelSearchItem("ch1", "Fireship")], videos, details, "1000000");
+    const result = await fetchCreatorVideos("fireship", "claude code");
+    expect(result).toHaveLength(3);
+    expect(result[0].channelTitle).toBe("Fireship");
+    expect(result[0].subscriberCount).toBe(1_000_000);
+    expect(result[0].videoUrl).toBe("https://www.youtube.com/watch?v=v1");
+  });
+
+  it("does not filter by subscriber count or seenIds", async () => {
+    setupCreatorMocks(
+      [channelSearchItem("ch1", "TinyChannel")],
+      [searchItem("v1", "ch1")],
+      [videoDetail("v1")],
+      "50" // below MIN_SUBSCRIBERS
+    );
+    const result = await fetchCreatorVideos("tinychannel", "claude");
+    expect(result).toHaveLength(1);
+  });
+
+  it("throws when YouTube API returns an error", async () => {
+    mockFetch.mockResolvedValueOnce(errorResponse(403, "Quota exceeded"));
+    await expect(fetchCreatorVideos("fireship", "claude")).rejects.toThrow("YouTube API 403");
   });
 });
 

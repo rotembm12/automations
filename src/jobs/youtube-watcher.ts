@@ -1,11 +1,12 @@
 import { SocketModeClient } from "@slack/socket-mode";
 import { WebClient } from "@slack/web-api";
 import { readState, writeState } from "../state";
-import { fetchNewClaudeCodeVideos } from "../services/youtube";
+import { fetchNewClaudeCodeVideos, fetchCreatorVideos } from "../services/youtube";
 import { postVideoAlert } from "../services/slack-videos";
 
 const POLL_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 const TRIGGER_PHRASE = "go fetch videos";
+const CREATOR_FETCH_REGEX = /^go fetch (\S+) (.+) videos$/;
 const AI_VIDEOS_CHANNEL = process.env.SLACK_AI_VIDEOS_CHANNEL ?? "#ai-videos";
 
 const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
@@ -49,6 +50,36 @@ async function check(replyChannel?: string): Promise<void> {
   }
 
   writeState({ lastChecked: new Date().toISOString(), seenIds: [...seenIds] });
+}
+
+async function handleCreatorFetch(channel: string, creator: string, query: string): Promise<void> {
+  console.log(`[${new Date().toISOString()}] Creator fetch: creator="${creator}" query="${query}"`);
+  await slack.chat.postMessage({
+    channel,
+    text: `On it! Searching for *${query}* videos by *${creator}*...`,
+  });
+
+  let videos: Awaited<ReturnType<typeof fetchCreatorVideos>>;
+  try {
+    videos = await fetchCreatorVideos(creator, query);
+  } catch (err) {
+    console.error("Failed to fetch creator videos:", err);
+    await slack.chat.postMessage({ channel, text: "Failed to fetch videos from YouTube. Please try again." });
+    return;
+  }
+
+  if (videos.length === 0) {
+    await slack.chat.postMessage({ channel, text: `No videos found for *${query}* by *${creator}*.` });
+    return;
+  }
+
+  for (const video of videos) {
+    try {
+      await postVideoAlert(video);
+    } catch (err) {
+      console.error(`Failed to post ${video.id}:`, err);
+    }
+  }
 }
 
 async function resolveChannelId(nameOrId: string): Promise<string | undefined> {
@@ -98,19 +129,25 @@ async function startSocketListener(): Promise<void> {
     await ack();
 
     const text: string = (event.text ?? "").trim().toLowerCase();
-    if (text !== TRIGGER_PHRASE) return;
+    const creatorMatch = text.match(CREATOR_FETCH_REGEX);
+    const isTrigger = text === TRIGGER_PHRASE;
+
+    if (!isTrigger && !creatorMatch) return;
 
     // If we resolved a target channel, enforce it; otherwise accept from anywhere
     if (targetChannelId && event.channel !== targetChannelId) return;
 
-    console.log(`[${new Date().toISOString()}] Manual trigger received from channel ${event.channel}`);
-
-    await slack.chat.postMessage({
-      channel: event.channel,
-      text: "On it! Fetching latest Claude Code videos...",
-    });
-
-    await check(event.channel);
+    if (isTrigger) {
+      console.log(`[${new Date().toISOString()}] Manual trigger received from channel ${event.channel}`);
+      await slack.chat.postMessage({
+        channel: event.channel,
+        text: "On it! Fetching latest Claude Code videos...",
+      });
+      await check(event.channel);
+    } else if (creatorMatch) {
+      const [, creator, query] = creatorMatch;
+      await handleCreatorFetch(event.channel, creator, query);
+    }
   });
 
   await socketClient.start();
