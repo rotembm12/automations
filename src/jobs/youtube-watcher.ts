@@ -106,7 +106,7 @@ async function resolveChannelId(nameOrId: string): Promise<string | undefined> {
     let cursor: string | undefined;
     do {
       const result: any = await slack.conversations.list({
-        types: "public_channel,private_channel",
+        types: "public_channel",
         limit: 200,
         cursor,
       });
@@ -158,20 +158,20 @@ async function startSocketListener(): Promise<void> {
     }
   });
 
-  socketClient.on("interactive", async ({ payload, ack }: any) => {
+  socketClient.on("interactive", async ({ body, ack }: any) => {
     await ack();
-    console.log(`[${new Date().toISOString()}] Interactive event received: type=${payload.type}, action=${payload.actions?.[0]?.action_id}`);
+    console.log(`[${new Date().toISOString()}] Interactive event received: type=${body?.type}, action=${body?.actions?.[0]?.action_id}`);
 
-    if (payload.type !== "block_actions") return;
-    const action = payload.actions?.[0];
+    if (body?.type !== "block_actions") return;
+    const action = body.actions?.[0];
     if (action?.action_id !== "generate_blog") return;
 
     // channel id can live in different places depending on the surface
-    const channel: string = payload.channel?.id ?? payload.container?.channel_id;
-    const threadTs: string = payload.message?.ts ?? payload.container?.message_ts;
+    const channel: string = body.channel?.id ?? body.container?.channel_id;
+    const threadTs: string = body.message?.ts ?? body.container?.message_ts;
 
     if (!channel) {
-      console.error("generate_blog: could not determine channel from payload", JSON.stringify(payload));
+      console.error("generate_blog: could not determine channel from payload", JSON.stringify(body));
       return;
     }
 
