@@ -1,9 +1,8 @@
-import "dotenv/config";
 import { SocketModeClient } from "@slack/socket-mode";
 import { WebClient } from "@slack/web-api";
-import { readState, writeState } from "./state";
-import { fetchNewClaudeCodeVideos } from "./services/youtube";
-import { postVideoAlert } from "./services/slack";
+import { readState, writeState } from "../state";
+import { fetchNewClaudeCodeVideos } from "../services/youtube";
+import { postVideoAlert } from "../services/slack-videos";
 
 const POLL_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 const TRIGGER_PHRASE = "go fetch videos";
@@ -90,7 +89,9 @@ async function startSocketListener(): Promise<void> {
   console.log("Slack Socket Mode listener started.");
 }
 
-check();
-setInterval(check, POLL_INTERVAL_MS);
-startSocketListener().catch((err) => console.error("Socket Mode failed to start:", err));
-console.log(`Watcher running. Checking every ${POLL_INTERVAL_MS / 60_000} minutes.`);
+export function startYouTubeWatcher(): void {
+  check();
+  setInterval(check, POLL_INTERVAL_MS);
+  startSocketListener().catch((err) => console.error("Socket Mode failed to start:", err));
+  console.log(`YouTube watcher running. Checking every ${POLL_INTERVAL_MS / 60_000} minutes.`);
+}
