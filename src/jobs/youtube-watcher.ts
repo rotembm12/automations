@@ -2,6 +2,7 @@ import { SocketModeClient } from "@slack/socket-mode";
 import { WebClient } from "@slack/web-api";
 import { readState, writeState } from "../state";
 import { fetchNewClaudeCodeVideos, fetchCreatorVideos } from "../services/youtube";
+import { generateHebrewBlogPost } from "../services/blog";
 import { postVideoAlert } from "../services/slack-videos";
 
 const POLL_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
@@ -154,6 +155,47 @@ async function startSocketListener(): Promise<void> {
     } else if (creatorMatch) {
       const [, creator, query] = creatorMatch;
       await handleCreatorFetch(event.channel, creator, query);
+    }
+  });
+
+  socketClient.on("interactive", async ({ payload, ack }: any) => {
+    await ack();
+
+    if (payload.type !== "block_actions") return;
+    const action = payload.actions?.[0];
+    if (action?.action_id !== "generate_blog") return;
+
+    const channel = payload.channel?.id;
+    const threadTs = payload.message?.ts;
+
+    let videoData: any;
+    try {
+      videoData = JSON.parse(action.value);
+    } catch {
+      return;
+    }
+
+    await slack.chat.postMessage({
+      channel,
+      thread_ts: threadTs,
+      text: "✍️ Generating blog post in Hebrew, please wait...",
+    });
+
+    try {
+      const blogPost = await generateHebrewBlogPost(videoData);
+      await slack.chat.postMessage({
+        channel,
+        thread_ts: threadTs,
+        text: blogPost,
+      });
+      console.log(`[${new Date().toISOString()}] Blog post generated for "${videoData.title}"`);
+    } catch (err) {
+      console.error("Failed to generate blog post:", err);
+      await slack.chat.postMessage({
+        channel,
+        thread_ts: threadTs,
+        text: "Failed to generate blog post. Please try again.",
+      });
     }
   });
 

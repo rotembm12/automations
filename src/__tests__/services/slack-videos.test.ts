@@ -97,6 +97,29 @@ describe("postVideoAlert", () => {
     expect(btn.url).toBe("https://www.youtube.com/watch?v=abc123");
   });
 
+  it("includes Generate Blog button with action_id and video data as value", async () => {
+    await postVideoAlert(baseVideo);
+    const blocks: any[] = mockPostMessage.mock.calls[0][0].blocks;
+    const actionsBlock = blocks.find((b) => b.type === "actions");
+    const btn = actionsBlock.elements.find((e: any) => e.action_id === "generate_blog");
+    expect(btn).toBeDefined();
+    expect(btn.text.text).toBe("Generate Blog");
+    const value = JSON.parse(btn.value);
+    expect(value.id).toBe("abc123");
+    expect(value.title).toBe("Claude Code Tutorial");
+    expect(value.channelTitle).toBe("TechChannel");
+  });
+
+  it("truncates description to 500 chars in the button value", async () => {
+    const longDesc = "x".repeat(600);
+    await postVideoAlert({ ...baseVideo, description: longDesc });
+    const blocks: any[] = mockPostMessage.mock.calls[0][0].blocks;
+    const actionsBlock = blocks.find((b) => b.type === "actions");
+    const btn = actionsBlock.elements.find((e: any) => e.action_id === "generate_blog");
+    const value = JSON.parse(btn.value);
+    expect(value.description.length).toBe(500);
+  });
+
   it("truncates description longer than 200 chars and adds ellipsis", async () => {
     const longDesc = "x".repeat(250);
     await postVideoAlert({ ...baseVideo, description: longDesc });

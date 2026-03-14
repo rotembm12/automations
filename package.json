@@ -12,6 +12,7 @@
     "test:coverage": "jest --coverage"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
     "@notionhq/client": "^2.2.15",
     "@slack/socket-mode": "^1.3.3",
     "@slack/web-api": "^7.0.0",
