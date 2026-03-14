@@ -10,7 +10,7 @@ const AI_VIDEOS_CHANNEL = process.env.SLACK_AI_VIDEOS_CHANNEL ?? "#ai-videos";
 
 const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
 
-async function check(): Promise<void> {
+async function check(replyChannel?: string): Promise<void> {
   console.log(`[${new Date().toISOString()}] Checking for new Claude Code videos...`);
 
   const state = readState();
@@ -27,6 +27,12 @@ async function check(): Promise<void> {
   if (newVideos.length === 0) {
     console.log("No new videos.");
     writeState({ ...state, lastChecked: new Date().toISOString() });
+    if (replyChannel) {
+      await slack.chat.postMessage({
+        channel: replyChannel,
+        text: "No new Claude Code videos found since the last check.",
+      });
+    }
     return;
   }
 
@@ -104,7 +110,7 @@ async function startSocketListener(): Promise<void> {
       text: "On it! Fetching latest Claude Code videos...",
     });
 
-    await check();
+    await check(event.channel);
   });
 
   await socketClient.start();
