@@ -45,40 +45,62 @@ async function check(): Promise<void> {
   writeState({ lastChecked: new Date().toISOString(), seenIds: [...seenIds] });
 }
 
+async function resolveChannelId(nameOrId: string): Promise<string | undefined> {
+  // If it's already a Slack channel ID (e.g. C012AB3CD), use it directly
+  if (/^[A-Z][A-Z0-9]{6,}$/.test(nameOrId)) return nameOrId;
+
+  const name = nameOrId.replace(/^#/, "");
+  try {
+    const info = await slack.conversations.info({ channel: name });
+    return (info.channel as any)?.id;
+  } catch {
+    // conversations.info doesn't support name lookup — try conversations.list
+  }
+
+  try {
+    let cursor: string | undefined;
+    do {
+      const result: any = await slack.conversations.list({
+        types: "public_channel,private_channel",
+        limit: 200,
+        cursor,
+      });
+      const match = (result.channels ?? []).find((c: any) => c.name === name);
+      if (match) return match.id;
+      cursor = result.response_metadata?.next_cursor;
+    } while (cursor);
+  } catch (err) {
+    console.error("[YouTube watcher] Could not resolve channel ID:", err);
+  }
+
+  return undefined;
+}
+
 async function startSocketListener(): Promise<void> {
   const socketClient = new SocketModeClient({
     appToken: process.env.SLACK_APP_TOKEN!,
   });
 
+  const targetChannelId = await resolveChannelId(AI_VIDEOS_CHANNEL);
+  if (targetChannelId) {
+    console.log(`[YouTube watcher] Listening for "${TRIGGER_PHRASE}" in channel ${targetChannelId}`);
+  } else {
+    console.warn(`[YouTube watcher] Could not resolve channel "${AI_VIDEOS_CHANNEL}" — will accept trigger from any channel`);
+  }
+
   socketClient.on("message", async ({ event, ack }: any) => {
     await ack();
 
     const text: string = (event.text ?? "").trim().toLowerCase();
-    console.log(text);
     if (text !== TRIGGER_PHRASE) return;
 
-    // Resolve channel name to ID if needed, then compare
-    const eventChannel: string = event.channel;
-    const targetChannel = AI_VIDEOS_CHANNEL.startsWith("#")
-      ? AI_VIDEOS_CHANNEL.slice(1)
-      : AI_VIDEOS_CHANNEL;
+    // If we resolved a target channel, enforce it; otherwise accept from anywhere
+    if (targetChannelId && event.channel !== targetChannelId) return;
 
-    // Check if the message came from the right channel
-    let channelName: string | undefined;
-    try {
-      const info = await slack.conversations.info({ channel: eventChannel });
-      channelName = (info.channel as any)?.name;
-    } catch {
-      // If we can't resolve, skip
-      return;
-    }
-
-    if (channelName !== targetChannel) return;
-
-    console.log(`[${new Date().toISOString()}] Manual trigger received from #${channelName}`);
+    console.log(`[${new Date().toISOString()}] Manual trigger received from channel ${event.channel}`);
 
     await slack.chat.postMessage({
-      channel: eventChannel,
+      channel: event.channel,
       text: "On it! Fetching latest Claude Code videos...",
     });
 
