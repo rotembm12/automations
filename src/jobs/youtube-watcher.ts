@@ -160,29 +160,39 @@ async function startSocketListener(): Promise<void> {
 
   socketClient.on("interactive", async ({ payload, ack }: any) => {
     await ack();
+    console.log(`[${new Date().toISOString()}] Interactive event received: type=${payload.type}, action=${payload.actions?.[0]?.action_id}`);
 
     if (payload.type !== "block_actions") return;
     const action = payload.actions?.[0];
     if (action?.action_id !== "generate_blog") return;
 
-    const channel = payload.channel?.id;
-    const threadTs = payload.message?.ts;
+    // channel id can live in different places depending on the surface
+    const channel: string = payload.channel?.id ?? payload.container?.channel_id;
+    const threadTs: string = payload.message?.ts ?? payload.container?.message_ts;
+
+    if (!channel) {
+      console.error("generate_blog: could not determine channel from payload", JSON.stringify(payload));
+      return;
+    }
 
     let videoData: any;
     try {
       videoData = JSON.parse(action.value);
-    } catch {
+    } catch (err) {
+      console.error("generate_blog: failed to parse action value", err);
+      await slack.chat.postMessage({ channel, text: "Failed to parse video data. Please try again." });
       return;
     }
 
-    await slack.chat.postMessage({
-      channel,
-      thread_ts: threadTs,
-      text: "✍️ Generating blog post in Hebrew, please wait...",
-    });
-
     try {
+      await slack.chat.postMessage({
+        channel,
+        thread_ts: threadTs,
+        text: "✍️ Generating blog post in Hebrew, please wait...",
+      });
+
       const blogPost = await generateHebrewBlogPost(videoData);
+
       await slack.chat.postMessage({
         channel,
         thread_ts: threadTs,
@@ -194,7 +204,7 @@ async function startSocketListener(): Promise<void> {
       await slack.chat.postMessage({
         channel,
         thread_ts: threadTs,
-        text: "Failed to generate blog post. Please try again.",
+        text: `Failed to generate blog post: ${(err as Error).message}`,
       });
     }
   });
