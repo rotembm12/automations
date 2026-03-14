@@ -2,6 +2,7 @@ import { VideoMetadata } from "../types";
 
 const BASE_URL = "https://www.googleapis.com/youtube/v3";
 const MIN_SUBSCRIBERS = 1_000;
+const MAX_VIDEOS_PER_POLL = 5;
 const ALLOWED_LANGUAGES = ["en", "iw", "he"]; // English, Hebrew (iw = legacy ISO code)
 
 function isAllowedLanguage(lang: string | undefined): boolean {
@@ -83,6 +84,7 @@ export async function fetchCreatorVideos(creator: string, query: string): Promis
     const videoId: string = item.id.videoId;
     const details = detailsMap.get(videoId);
     const viewCount = parseInt(details?.statistics?.viewCount ?? "0");
+    const likeCount = parseInt(details?.statistics?.likeCount ?? "0");
     const duration = formatDuration(details?.contentDetails?.duration ?? "PT0S");
     const thumbnail =
       item.snippet.thumbnails?.maxres?.url ??
@@ -101,6 +103,7 @@ export async function fetchCreatorVideos(creator: string, query: string): Promis
       videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
       duration,
       viewCount,
+      likeCount,
       subscriberCount,
     };
   });
@@ -161,6 +164,7 @@ export async function fetchNewClaudeCodeVideos(
     if (!isAllowedLanguage(lang)) continue;
 
     const viewCount = parseInt(details?.statistics?.viewCount ?? "0");
+    const likeCount = parseInt(details?.statistics?.likeCount ?? "0");
     const duration = formatDuration(details?.contentDetails?.duration ?? "PT0S");
     const thumbnail =
       item.snippet.thumbnails?.maxres?.url ??
@@ -179,9 +183,13 @@ export async function fetchNewClaudeCodeVideos(
       videoUrl: `https://www.youtube.com/watch?v=${videoId}`,
       duration,
       viewCount,
+      likeCount,
       subscriberCount,
     });
   }
 
-  return results;
+  // Sort by combined engagement (views + likes) and return top N
+  return results
+    .sort((a, b) => (b.viewCount + b.likeCount) - (a.viewCount + a.likeCount))
+    .slice(0, MAX_VIDEOS_PER_POLL);
 }

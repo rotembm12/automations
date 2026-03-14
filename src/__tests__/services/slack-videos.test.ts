@@ -20,6 +20,7 @@ const baseVideo: VideoMetadata = {
   videoUrl: "https://www.youtube.com/watch?v=abc123",
   duration: "15:30",
   viewCount: 5000,
+  likeCount: 300,
   subscriberCount: 50000,
 };
 

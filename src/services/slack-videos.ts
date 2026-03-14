@@ -47,6 +47,7 @@ export async function postVideoAlert(video: VideoMetadata): Promise<void> {
           { type: "mrkdwn", text: `*Published:*\n${formatDate(video.publishedAt)}` },
           { type: "mrkdwn", text: `*Duration:*\n${video.duration}` },
           { type: "mrkdwn", text: `*Views:*\n${formatCount(video.viewCount)}` },
+          { type: "mrkdwn", text: `*Likes:*\n${formatCount(video.likeCount)}` },
         ],
       },
       ...(descriptionPreview

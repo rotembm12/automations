@@ -21,6 +21,7 @@ export interface VideoMetadata {
   videoUrl: string;
   duration: string;
   viewCount: number;
+  likeCount: number;
   subscriberCount: number;
 }
 

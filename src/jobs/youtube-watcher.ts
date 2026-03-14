@@ -5,7 +5,7 @@ import { fetchNewClaudeCodeVideos, fetchCreatorVideos } from "../services/youtub
 import { generateHebrewBlogPost } from "../services/blog";
 import { postVideoAlert } from "../services/slack-videos";
 
-const POLL_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+const POLL_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const TRIGGER_PHRASE = "go fetch videos";
 const CREATOR_FETCH_REGEX = /^go fetch (\S+) (.+) videos$/;
 const AI_VIDEOS_CHANNEL = process.env.SLACK_AI_VIDEOS_CHANNEL ?? "#ai-videos";
