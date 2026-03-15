@@ -20,12 +20,15 @@ import {
   searchLinkedInJobs,
   searchLinkedInPosts,
 } from "../services/linkedin";
+import { findBusinessesWithoutWebsite } from "../services/google-places";
+import { LOCAL_BIZ_CHANNEL, postLocalBizResults } from "../services/slack-local-biz";
 
 const POLL_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const TRIGGER_PHRASE = "go fetch videos";
 const CREATOR_FETCH_REGEX = /^go fetch (\S+) (.+) videos$/;
 const LINKEDIN_JOBS_REGEX = /^linkedin jobs (.+)$/;
 const LINKEDIN_POSTS_REGEX = /^linkedin posts (.+)$/;
+const LOCAL_BIZ_REGEX = /^local biz (.+),\s*(.+)$/;
 const AI_VIDEOS_CHANNEL = process.env.SLACK_AI_VIDEOS_CHANNEL ?? "#ai-videos";
 
 // In-memory filter state for pending LinkedIn searches.
@@ -119,6 +122,30 @@ async function handleLinkedInSearch(channel: string, type: "jobs" | "posts", key
   if (ts) linkedInFilterStates.set(`${channel}:${ts}`, state);
 }
 
+async function handleLocalBizSearch(channel: string, city: string, country: string): Promise<void> {
+  console.log(`[${new Date().toISOString()}] Local biz search: city="${city}" country="${country}"`);
+  await slack.chat.postMessage({
+    channel,
+    text: `Searching for businesses without a website in *${city}, ${country}*...`,
+  });
+
+  let businesses: Awaited<ReturnType<typeof findBusinessesWithoutWebsite>>;
+  try {
+    businesses = await findBusinessesWithoutWebsite(city.trim(), country.trim());
+  } catch (err) {
+    console.error("Local biz search failed:", err);
+    await slack.chat.postMessage({ channel, text: `Local biz search failed: ${(err as Error).message}` });
+    return;
+  }
+
+  try {
+    await postLocalBizResults(LOCAL_BIZ_CHANNEL, city.trim(), country.trim(), businesses);
+  } catch (err) {
+    console.error("Failed to post local biz results:", err);
+    await slack.chat.postMessage({ channel, text: `Failed to post results: ${(err as Error).message}` });
+  }
+}
+
 async function resolveChannelId(nameOrId: string): Promise<string | undefined> {
   // If it's already a Slack channel ID (e.g. C012AB3CD), use it directly
   if (/^[A-Z][A-Z0-9]{6,}$/.test(nameOrId)) return nameOrId;
@@ -159,6 +186,7 @@ async function startSocketListener(): Promise<void> {
   // Until resolved, commands are accepted from any channel.
   let aiVideosChannelId: string | undefined;
   let linkedInChannelId: string | undefined;
+  let localBizChannelId: string | undefined;
 
   resolveChannelId(AI_VIDEOS_CHANNEL).then((id) => {
     aiVideosChannelId = id;
@@ -168,6 +196,11 @@ async function startSocketListener(): Promise<void> {
   resolveChannelId(LINKEDIN_CHANNEL).then((id) => {
     linkedInChannelId = id;
     console.log(`[LinkedIn watcher] Channel resolved: ${LINKEDIN_CHANNEL} → ${id ?? "not found, accepting from any channel"}`);
+  });
+
+  resolveChannelId(LOCAL_BIZ_CHANNEL).then((id) => {
+    localBizChannelId = id;
+    console.log(`[Local biz watcher] Channel resolved: ${LOCAL_BIZ_CHANNEL} → ${id ?? "not found, accepting from any channel"}`);
   });
 
   socketClient.on("message", async ({ event, ack }: any) => {
@@ -182,8 +215,9 @@ async function startSocketListener(): Promise<void> {
     const creatorMatch = text.match(CREATOR_FETCH_REGEX);
     const linkedInJobsMatch = text.match(LINKEDIN_JOBS_REGEX);
     const linkedInPostsMatch = text.match(LINKEDIN_POSTS_REGEX);
+    const localBizMatch = text.match(LOCAL_BIZ_REGEX);
     const isTrigger = text === TRIGGER_PHRASE;
-    console.log(`[DEBUG] linkedInChannelId=${linkedInChannelId} jobsMatch=${!!linkedInJobsMatch} postsMatch=${!!linkedInPostsMatch}`);
+    console.log(`[DEBUG] linkedInChannelId=${linkedInChannelId} jobsMatch=${!!linkedInJobsMatch} postsMatch=${!!linkedInPostsMatch} localBizMatch=${!!localBizMatch}`);
 
     // YouTube commands — enforce AI videos channel
     if (isTrigger || creatorMatch) {
@@ -216,6 +250,20 @@ async function startSocketListener(): Promise<void> {
       } catch (err) {
         console.error("LinkedIn handleLinkedInSearch failed:", err);
         await slack.chat.postMessage({ channel: event.channel, text: `LinkedIn search failed: ${(err as Error).message}` }).catch(() => {});
+      }
+      return;
+    }
+
+    // Local biz command — enforce local biz channel
+    if (localBizMatch) {
+      if (localBizChannelId && event.channel !== localBizChannelId) return;
+
+      const [, city, country] = localBizMatch;
+      try {
+        await handleLocalBizSearch(event.channel, city.trim(), country.trim());
+      } catch (err) {
+        console.error("Local biz search failed:", err);
+        await slack.chat.postMessage({ channel: event.channel, text: `Local biz search failed: ${(err as Error).message}` }).catch(() => {});
       }
     }
   });
@@ -334,9 +382,9 @@ async function startSocketListener(): Promise<void> {
   console.log("Slack Socket Mode listener started.");
 }
 
-export function startYouTubeWatcher(): void {
+export function startSlackBot(): void {
   check();
   setInterval(check, POLL_INTERVAL_MS);
   startSocketListener().catch((err) => console.error("Socket Mode failed to start:", err));
-  console.log(`YouTube watcher running. Checking every ${POLL_INTERVAL_MS / 60_000} minutes.`);
+  console.log(`Slack bot running. YouTube polling every ${POLL_INTERVAL_MS / 60_000} minutes.`);
 }
