@@ -24,6 +24,7 @@ import { findBusinessesWithoutWebsite } from "../services/google-places";
 import { LOCAL_BIZ_CHANNEL, postLocalBizResults } from "../services/slack-local-biz";
 import { fetchBizDetails } from "../services/biz-details";
 import { generateLandingPage, LandingPageData } from "../services/landing-page";
+import { publishToGitHubPages } from "../services/github-pages";
 
 const POLL_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const TRIGGER_PHRASE = "go fetch videos";
@@ -415,13 +416,23 @@ async function startSocketListener(): Promise<void> {
         const details = await fetchBizDetails(bizData.name, bizData.address);
         const html = await generateLandingPage(bizData, details);
 
-        await slack.chat.postMessage({
-          channel,
-          thread_ts: messageTs,
-          text: `Landing page for *${bizData.name}* 🚀 — copy the HTML below, save as \`index.html\` and open in your browser:`,
-        });
+        const slug = bizData.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
-        const safeHtml = html.replace(/`/g, "\`");
+        // Publish to GitHub Pages (best-effort — don't fail the whole flow if it errors)
+        let pageUrl: string | undefined;
+        try {
+          pageUrl = await publishToGitHubPages(html, slug);
+        } catch (err) {
+          console.error("GitHub Pages publish failed:", err);
+        }
+
+        const intro = pageUrl
+          ? `Landing page for *${bizData.name}* 🚀\n🔗 *Live URL* (may take ~1 min to go live): ${pageUrl}\n\nHTML source below — save as \`index.html\` to preview locally:`
+          : `Landing page for *${bizData.name}* 🚀 — save as \`index.html\` and open in your browser:`;
+
+        await slack.chat.postMessage({ channel, thread_ts: messageTs, text: intro });
+
+        const safeHtml = html.replace(/`/g, "\\`");
         await slack.chat.postMessage({
           channel,
           thread_ts: messageTs,
