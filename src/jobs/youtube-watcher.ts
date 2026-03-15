@@ -155,22 +155,20 @@ async function startSocketListener(): Promise<void> {
     appToken: process.env.SLACK_APP_TOKEN!,
   });
 
-  const [aiVideosChannelId, linkedInChannelId] = await Promise.all([
-    resolveChannelId(AI_VIDEOS_CHANNEL),
-    resolveChannelId(LINKEDIN_CHANNEL),
-  ]);
+  // Resolve channel IDs in the background — don't block socket startup.
+  // Until resolved, commands are accepted from any channel.
+  let aiVideosChannelId: string | undefined;
+  let linkedInChannelId: string | undefined;
 
-  if (aiVideosChannelId) {
-    console.log(`[YouTube watcher] Listening for "${TRIGGER_PHRASE}" in channel ${aiVideosChannelId}`);
-  } else {
-    console.warn(`[YouTube watcher] Could not resolve channel "${AI_VIDEOS_CHANNEL}" — will accept trigger from any channel`);
-  }
+  resolveChannelId(AI_VIDEOS_CHANNEL).then((id) => {
+    aiVideosChannelId = id;
+    console.log(`[YouTube watcher] Channel resolved: ${AI_VIDEOS_CHANNEL} → ${id ?? "not found, accepting from any channel"}`);
+  });
 
-  if (linkedInChannelId) {
-    console.log(`[LinkedIn watcher] Listening for "linkedin jobs/posts" in channel ${linkedInChannelId}`);
-  } else {
-    console.warn(`[LinkedIn watcher] Could not resolve channel "${LINKEDIN_CHANNEL}" — will accept LinkedIn commands from any channel`);
-  }
+  resolveChannelId(LINKEDIN_CHANNEL).then((id) => {
+    linkedInChannelId = id;
+    console.log(`[LinkedIn watcher] Channel resolved: ${LINKEDIN_CHANNEL} → ${id ?? "not found, accepting from any channel"}`);
+  });
 
   socketClient.on("message", async ({ event, ack }: any) => {
     await ack();
