@@ -111,7 +111,7 @@ OUTPUT: Return ONLY the complete HTML document starting with <!DOCTYPE html>. No
 
   const stream = anthropic.messages.stream({
     model: "claude-opus-4-6",
-    max_tokens: 16000,
+    max_tokens: 22000,
     messages: [{ role: "user", content: prompt }],
   });
 
