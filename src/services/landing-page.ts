@@ -61,8 +61,34 @@ ${sourceContext}
 - Write the hero headline as a copywriter would — lead with the customer's desire or outcome, not the business name
 - Every CTA should be specific (not "Submit" — use "Call Us Now", "Book a Table", "Get a Free Quote", etc.)
 
+━━━ BILINGUAL REQUIREMENT (Hebrew + English) ━━━
+The page MUST support both Hebrew (default) and English via a language toggle.
+
+Implementation pattern:
+1. <html lang="he" dir="rtl"> — Hebrew is the default
+2. All visible text lives in a JS translations object:
+   const t = {
+     he: { nav_about: "אודות", nav_contact: "צור קשר", hero_title: "...", ... },
+     en: { nav_about: "About",  nav_contact: "Contact",  hero_title: "...", ... }
+   };
+3. Every translatable element gets data-i18n="key" attribute
+4. A setLang(lang) function loops over [data-i18n] elements, swaps text, and sets:
+   document.documentElement.lang = lang
+   document.documentElement.dir  = lang === "he" ? "rtl" : "ltr"
+5. Language toggle button in the nav (right side on desktop). Shows "EN" when Hebrew active, "עב" when English active. Styled as a pill button with border.
+6. Persist choice in localStorage.
+
+Font rule: load BOTH a Hebrew-supporting font AND a Latin font.
+- For Hebrew: use "Heebo" or "Rubik" (both support Hebrew + Latin well)
+- Headings: Rubik (weight 700/800) | Body: Heebo (weight 400/500)
+- This single pairing works beautifully for both languages — no font-switching needed.
+
+RTL/LTR layout: use logical CSS properties where it helps (margin-inline-start, padding-inline-end, text-align: start) so the layout mirrors naturally on dir change. Flexbox row-reverse is NOT needed — logical properties handle it.
+
+Write ALL content in both languages — every nav link, heading, paragraph, button, label, and placeholder. Hebrew copy should be native-quality, not a literal translation.
+
 ━━━ SECTIONS ━━━
-1. NAV — sticky, 68px tall. Business name left. Two links right ("About", "Contact"). On scroll: JS adds .scrolled → white bg + backdrop-filter:blur(16px) + subtle shadow. Nav links initially white, turn dark on .scrolled.
+1. NAV — sticky, 68px tall. Business name left (in current language). Nav links + lang toggle button right. On scroll: JS adds .scrolled → white bg + backdrop-filter:blur(16px) + subtle shadow. Nav links initially white, turn dark on .scrolled.
 
 2. HERO — 100vh. ${hasImages ? `Hero image: ${details.images[0]} — cover, center. Overlay: linear-gradient(to bottom, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0.65) 100%).` : "Full-bleed gradient background — pick 2-3 complementary colors, use a diagonal or radial gradient. No rainbows."}
    - h1: emotionally resonant tagline (not the business name). clamp(3rem,6vw,5rem), weight 800, white.
@@ -123,6 +149,8 @@ Intersection Observer (20 lines max JS):
 
 ━━━ NON-NEGOTIABLE RULES ━━━
 ✗ No Lorem Ipsum — every word is written for this specific business
+✗ No missing translations — every key in t.he must exist in t.en and vice versa
+✗ Hebrew must be native-quality — not Google Translate word-for-word
 ✗ No Bootstrap, Tailwind, UIKit, or any CSS framework
 ✗ No external images other than the URLs provided above
 ✗ No childish clip-art SVGs — use clean, minimal line icons
