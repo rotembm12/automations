@@ -20,7 +20,16 @@ function buildBusinessBlock(biz: LocalBusiness): any[] {
   const phoneText = biz.phone ? `📞 ${biz.phone}` : "📞 No phone listed";
   const lines = [typeText, `📍 ${biz.address}`, phoneText, ratingText].filter(Boolean);
 
-  const buttonValue = JSON.stringify({ name: biz.name, address: biz.address });
+  const detailsValue = JSON.stringify({ name: biz.name, address: biz.address });
+  const landingValue = JSON.stringify({
+    name: biz.name,
+    address: biz.address,
+    phone: biz.phone,
+    types: biz.types,
+    mapsUrl: biz.mapsUrl,
+    rating: biz.rating,
+    totalRatings: biz.totalRatings,
+  });
 
   return [
     {
@@ -37,7 +46,14 @@ function buildBusinessBlock(biz: LocalBusiness): any[] {
           type: "button",
           text: { type: "plain_text", text: "🔍 Get Details", emoji: true },
           action_id: "biz_details",
-          value: buttonValue,
+          value: detailsValue,
+        },
+        {
+          type: "button",
+          text: { type: "plain_text", text: "🌐 Build Landing Page", emoji: true },
+          action_id: "biz_landing_page",
+          value: landingValue,
+          style: "primary",
         },
       ],
     },

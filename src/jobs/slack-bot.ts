@@ -23,6 +23,7 @@ import {
 import { findBusinessesWithoutWebsite } from "../services/google-places";
 import { LOCAL_BIZ_CHANNEL, postLocalBizResults } from "../services/slack-local-biz";
 import { fetchBizDetails } from "../services/biz-details";
+import { generateLandingPage, LandingPageData } from "../services/landing-page";
 
 const POLL_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const TRIGGER_PHRASE = "go fetch videos";
@@ -389,6 +390,46 @@ async function startSocketListener(): Promise<void> {
           channel,
           thread_ts: messageTs,
           text: `Failed to fetch details: ${(err as Error).message}`,
+        });
+      }
+      return;
+    }
+
+    // ── Build landing page button ───────────────────────────────────────────
+    if (actionId === "biz_landing_page") {
+      let bizData: LandingPageData;
+      try {
+        bizData = JSON.parse(action.value);
+      } catch {
+        await slack.chat.postMessage({ channel, thread_ts: messageTs, text: "Failed to parse business data. Please try again." });
+        return;
+      }
+
+      await slack.chat.postMessage({
+        channel,
+        thread_ts: messageTs,
+        text: `Building a landing page for *${bizData.name}* — this takes ~30 seconds...`,
+      });
+
+      try {
+        const details = await fetchBizDetails(bizData.name, bizData.address);
+        const html = await generateLandingPage(bizData, details);
+
+        await (slack.files as any).uploadV2({
+          channel_id: channel,
+          thread_ts: messageTs,
+          filename: `${bizData.name.toLowerCase().replace(/\s+/g, "-")}-landing-page.html`,
+          file: Buffer.from(html),
+          initial_comment: `Here's the landing page demo for *${bizData.name}* 🚀\nOpen the file in a browser to preview it.`,
+        });
+
+        console.log(`[${new Date().toISOString()}] Landing page built for "${bizData.name}"`);
+      } catch (err) {
+        console.error("Landing page generation failed:", err);
+        await slack.chat.postMessage({
+          channel,
+          thread_ts: messageTs,
+          text: `Failed to build landing page: ${(err as Error).message}`,
         });
       }
       return;
