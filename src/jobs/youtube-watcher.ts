@@ -176,10 +176,13 @@ async function startSocketListener(): Promise<void> {
     await ack();
 
     const text: string = (event.text ?? "").trim().toLowerCase();
+    console.log(`[DEBUG] message event: channel=${event.channel} text="${text}"`);
+
     const creatorMatch = text.match(CREATOR_FETCH_REGEX);
     const linkedInJobsMatch = text.match(LINKEDIN_JOBS_REGEX);
     const linkedInPostsMatch = text.match(LINKEDIN_POSTS_REGEX);
     const isTrigger = text === TRIGGER_PHRASE;
+    console.log(`[DEBUG] linkedInChannelId=${linkedInChannelId} jobsMatch=${!!linkedInJobsMatch} postsMatch=${!!linkedInPostsMatch}`);
 
     // YouTube commands — enforce AI videos channel
     if (isTrigger || creatorMatch) {
