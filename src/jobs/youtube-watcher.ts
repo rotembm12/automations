@@ -4,11 +4,33 @@ import { readState, writeState } from "../state";
 import { fetchNewClaudeCodeVideos, fetchCreatorVideos } from "../services/youtube";
 import { generateHebrewBlogPost } from "../services/blog";
 import { postVideoAlert } from "../services/slack-videos";
+import {
+  LINKEDIN_CHANNEL,
+  buildJobsFilterBlocks,
+  buildPostsFilterBlocks,
+  postFilterForm,
+  updateFilterForm,
+  postJobResults,
+  postPostResults,
+} from "../services/slack-linkedin";
+import {
+  SearchState,
+  defaultJobsState,
+  defaultPostsState,
+  searchLinkedInJobs,
+  searchLinkedInPosts,
+} from "../services/linkedin";
 
 const POLL_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const TRIGGER_PHRASE = "go fetch videos";
 const CREATOR_FETCH_REGEX = /^go fetch (\S+) (.+) videos$/;
+const LINKEDIN_JOBS_REGEX = /^linkedin jobs (.+)$/;
+const LINKEDIN_POSTS_REGEX = /^linkedin posts (.+)$/;
 const AI_VIDEOS_CHANNEL = process.env.SLACK_AI_VIDEOS_CHANNEL ?? "#ai-videos";
+
+// In-memory filter state for pending LinkedIn searches.
+// Key: "channelId:messageTs", Value: current filter selections.
+const linkedInFilterStates = new Map<string, SearchState>();
 
 const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
 
@@ -90,6 +112,13 @@ async function handleCreatorFetch(channel: string, creator: string, query: strin
   writeState({ ...state, seenIds: [...seenIds] });
 }
 
+async function handleLinkedInSearch(channel: string, type: "jobs" | "posts", keywords: string): Promise<void> {
+  console.log(`[${new Date().toISOString()}] LinkedIn ${type} search: "${keywords}"`);
+  const state = type === "jobs" ? defaultJobsState(keywords) : defaultPostsState(keywords);
+  const ts = await postFilterForm(channel, state);
+  if (ts) linkedInFilterStates.set(`${channel}:${ts}`, state);
+}
+
 async function resolveChannelId(nameOrId: string): Promise<string | undefined> {
   // If it's already a Slack channel ID (e.g. C012AB3CD), use it directly
   if (/^[A-Z][A-Z0-9]{6,}$/.test(nameOrId)) return nameOrId;
@@ -126,11 +155,21 @@ async function startSocketListener(): Promise<void> {
     appToken: process.env.SLACK_APP_TOKEN!,
   });
 
-  const targetChannelId = await resolveChannelId(AI_VIDEOS_CHANNEL);
-  if (targetChannelId) {
-    console.log(`[YouTube watcher] Listening for "${TRIGGER_PHRASE}" in channel ${targetChannelId}`);
+  const [aiVideosChannelId, linkedInChannelId] = await Promise.all([
+    resolveChannelId(AI_VIDEOS_CHANNEL),
+    resolveChannelId(LINKEDIN_CHANNEL),
+  ]);
+
+  if (aiVideosChannelId) {
+    console.log(`[YouTube watcher] Listening for "${TRIGGER_PHRASE}" in channel ${aiVideosChannelId}`);
   } else {
     console.warn(`[YouTube watcher] Could not resolve channel "${AI_VIDEOS_CHANNEL}" — will accept trigger from any channel`);
+  }
+
+  if (linkedInChannelId) {
+    console.log(`[LinkedIn watcher] Listening for "linkedin jobs/posts" in channel ${linkedInChannelId}`);
+  } else {
+    console.warn(`[LinkedIn watcher] Could not resolve channel "${LINKEDIN_CHANNEL}" — will accept LinkedIn commands from any channel`);
   }
 
   socketClient.on("message", async ({ event, ack }: any) => {
@@ -138,42 +177,115 @@ async function startSocketListener(): Promise<void> {
 
     const text: string = (event.text ?? "").trim().toLowerCase();
     const creatorMatch = text.match(CREATOR_FETCH_REGEX);
+    const linkedInJobsMatch = text.match(LINKEDIN_JOBS_REGEX);
+    const linkedInPostsMatch = text.match(LINKEDIN_POSTS_REGEX);
     const isTrigger = text === TRIGGER_PHRASE;
 
-    if (!isTrigger && !creatorMatch) return;
+    // YouTube commands — enforce AI videos channel
+    if (isTrigger || creatorMatch) {
+      if (aiVideosChannelId && event.channel !== aiVideosChannelId) return;
 
-    // If we resolved a target channel, enforce it; otherwise accept from anywhere
-    if (targetChannelId && event.channel !== targetChannelId) return;
+      if (isTrigger) {
+        console.log(`[${new Date().toISOString()}] Manual trigger received from channel ${event.channel}`);
+        await slack.chat.postMessage({
+          channel: event.channel,
+          text: "On it! Fetching latest Claude Code videos...",
+        });
+        await check(event.channel);
+      } else if (creatorMatch) {
+        const [, creator, query] = creatorMatch;
+        await handleCreatorFetch(event.channel, creator, query);
+      }
+      return;
+    }
 
-    if (isTrigger) {
-      console.log(`[${new Date().toISOString()}] Manual trigger received from channel ${event.channel}`);
-      await slack.chat.postMessage({
-        channel: event.channel,
-        text: "On it! Fetching latest Claude Code videos...",
-      });
-      await check(event.channel);
-    } else if (creatorMatch) {
-      const [, creator, query] = creatorMatch;
-      await handleCreatorFetch(event.channel, creator, query);
+    // LinkedIn commands — enforce LinkedIn channel
+    if (linkedInJobsMatch || linkedInPostsMatch) {
+      if (linkedInChannelId && event.channel !== linkedInChannelId) return;
+
+      if (linkedInJobsMatch) {
+        await handleLinkedInSearch(event.channel, "jobs", linkedInJobsMatch[1].trim());
+      } else if (linkedInPostsMatch) {
+        await handleLinkedInSearch(event.channel, "posts", linkedInPostsMatch[1].trim());
+      }
     }
   });
 
   socketClient.on("interactive", async ({ body, ack }: any) => {
     await ack();
-    console.log(`[${new Date().toISOString()}] Interactive event received: type=${body?.type}, action=${body?.actions?.[0]?.action_id}`);
 
     if (body?.type !== "block_actions") return;
-    const action = body.actions?.[0];
-    if (action?.action_id !== "generate_blog") return;
 
-    // channel id can live in different places depending on the surface
+    const action = body.actions?.[0];
+    const actionId: string = action?.action_id ?? "";
     const channel: string = body.channel?.id ?? body.container?.channel_id;
-    const threadTs: string = body.message?.ts ?? body.container?.message_ts;
+    const messageTs: string = body.message?.ts ?? body.container?.message_ts;
+
+    console.log(`[${new Date().toISOString()}] Interactive event: action=${actionId}`);
 
     if (!channel) {
-      console.error("generate_blog: could not determine channel from payload", JSON.stringify(body));
+      console.error("interactive: could not determine channel", JSON.stringify(body));
       return;
     }
+
+    // ── LinkedIn filter select changed ──────────────────────────────────────
+    if (actionId === "li_date" || actionId === "li_remote" || actionId === "li_count") {
+      const stateKey = `${channel}:${messageTs}`;
+      const currentState = linkedInFilterStates.get(stateKey);
+      if (!currentState) return;
+
+      const selected: string = action.selected_option?.value ?? "any";
+      const updated: SearchState = { ...currentState };
+      if (actionId === "li_date") updated.date = selected as SearchState["date"];
+      if (actionId === "li_remote") updated.remote = selected as SearchState["remote"];
+      if (actionId === "li_count") updated.count = parseInt(selected, 10);
+
+      linkedInFilterStates.set(stateKey, updated);
+      await updateFilterForm(channel, messageTs, updated);
+      return;
+    }
+
+    // ── LinkedIn search button clicked ──────────────────────────────────────
+    if (actionId === "li_search") {
+      const stateKey = `${channel}:${messageTs}`;
+      let state: SearchState;
+      try {
+        state = linkedInFilterStates.get(stateKey) ?? JSON.parse(action.value);
+      } catch {
+        await slack.chat.postMessage({ channel, thread_ts: messageTs, text: "Failed to read search state. Please try again." });
+        return;
+      }
+
+      await slack.chat.postMessage({
+        channel,
+        thread_ts: messageTs,
+        text: `Searching LinkedIn ${state.type} for *${state.keywords}*...`,
+      });
+
+      try {
+        if (state.type === "jobs") {
+          const jobs = await searchLinkedInJobs(state);
+          await postJobResults(channel, messageTs, jobs, state.keywords);
+        } else {
+          const posts = await searchLinkedInPosts(state);
+          await postPostResults(channel, messageTs, posts, state.keywords);
+        }
+        linkedInFilterStates.delete(stateKey);
+      } catch (err) {
+        console.error("LinkedIn search failed:", err);
+        await slack.chat.postMessage({
+          channel,
+          thread_ts: messageTs,
+          text: `LinkedIn search failed: ${(err as Error).message}`,
+        });
+      }
+      return;
+    }
+
+    // ── Generate blog button ────────────────────────────────────────────────
+    if (actionId !== "generate_blog") return;
+
+    const threadTs: string = body.message?.ts ?? body.container?.message_ts;
 
     let videoData: any;
     try {
