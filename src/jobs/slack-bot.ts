@@ -415,12 +415,29 @@ async function startSocketListener(): Promise<void> {
         const details = await fetchBizDetails(bizData.name, bizData.address);
         const html = await generateLandingPage(bizData, details);
 
-        await (slack.files as any).uploadV2({
+        const filename = `${bizData.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-landing-page.html`;
+        const buffer = Buffer.from(html, "utf-8");
+
+        // Step 1: get a pre-signed upload URL from Slack
+        const urlRes: any = await slack.files.getUploadURLExternal({
+          filename,
+          length: buffer.length,
+        });
+
+        // Step 2: push the file bytes to the pre-signed URL
+        const uploadRes = await fetch(urlRes.upload_url, {
+          method: "POST",
+          body: buffer,
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+        if (!uploadRes.ok) throw new Error(`File upload failed with status ${uploadRes.status}`);
+
+        // Step 3: complete the upload, attach to channel thread
+        await (slack.files as any).completeUploadExternal({
+          files: [{ id: urlRes.file_id, title: `${bizData.name} — Landing Page` }],
           channel_id: channel,
           thread_ts: messageTs,
-          filename: `${bizData.name.toLowerCase().replace(/\s+/g, "-")}-landing-page.html`,
-          file: Buffer.from(html),
-          initial_comment: `Here's the landing page demo for *${bizData.name}* 🚀\nOpen the file in a browser to preview it.`,
+          initial_comment: `Here's the landing page demo for *${bizData.name}* 🚀\nDownload the file and open it in your browser to preview.`,
         });
 
         console.log(`[${new Date().toISOString()}] Landing page built for "${bizData.name}"`);
