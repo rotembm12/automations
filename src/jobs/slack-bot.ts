@@ -382,9 +382,9 @@ async function startSocketListener(): Promise<void> {
   console.log("Slack Socket Mode listener started.");
 }
 
-export function startYouTubeWatcher(): void {
+export function startSlackBot(): void {
   check();
   setInterval(check, POLL_INTERVAL_MS);
   startSocketListener().catch((err) => console.error("Socket Mode failed to start:", err));
-  console.log(`YouTube watcher running. Checking every ${POLL_INTERVAL_MS / 60_000} minutes.`);
+  console.log(`Slack bot running. YouTube polling every ${POLL_INTERVAL_MS / 60_000} minutes.`);
 }
