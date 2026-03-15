@@ -490,14 +490,19 @@ async function startSocketListener(): Promise<void> {
           text: "🎨 Generating cover image, please wait...",
         });
 
-        const imageBuffer = await generateBlogImage(videoData);
+        const imageUrl = await generateBlogImage(videoData);
 
-        await slack.files.uploadV2({
-          channel_id: channel,
+        await slack.chat.postMessage({
+          channel,
           thread_ts: threadTs,
-          file: imageBuffer,
-          filename: "blog-cover.png",
-          title: `Cover: ${videoData.title}`,
+          text: `Cover image for: ${videoData.title}`,
+          blocks: [
+            {
+              type: "image",
+              image_url: imageUrl,
+              alt_text: videoData.title,
+            },
+          ],
         });
 
         console.log(`[${new Date().toISOString()}] Blog image generated for "${videoData.title}"`);

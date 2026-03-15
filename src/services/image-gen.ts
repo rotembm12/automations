@@ -3,7 +3,7 @@ import { fal } from "@fal-ai/client";
 export async function generateBlogImage(video: {
   title: string;
   description: string;
-}): Promise<Buffer> {
+}): Promise<string> {
   fal.config({ credentials: process.env.FAL_API_KEY });
 
   const prompt = buildPrompt(video.title, video.description);
@@ -12,10 +12,7 @@ export async function generateBlogImage(video: {
     input: { prompt, image_size: "landscape_16_9" },
   });
 
-  const imageUrl = (result.data as any).images[0].url;
-  const response = await fetch(imageUrl);
-  const arrayBuffer = await response.arrayBuffer();
-  return Buffer.from(arrayBuffer);
+  return (result.data as any).images[0].url;
 }
 
 function buildPrompt(title: string, description: string): string {
