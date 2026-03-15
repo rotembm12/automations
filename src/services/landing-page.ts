@@ -162,7 +162,7 @@ OUTPUT: Return ONLY the complete HTML starting with <!DOCTYPE html>. Nothing bef
 
   const stream = anthropic.messages.stream({
     model: "claude-opus-4-6",
-    max_tokens: 30000,
+    max_tokens: 40000,
     thinking: { type: "adaptive" },
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: prompt }],
