@@ -418,7 +418,14 @@ async function startSocketListener(): Promise<void> {
         await slack.chat.postMessage({
           channel,
           thread_ts: messageTs,
-          text: `Landing page for *${bizData.name}* 🚀 — copy the HTML below, save as \`.html\` and open in your browser:\n\`\`\`\n${html}\n\`\`\``,
+          text: `Landing page for *${bizData.name}* 🚀 — copy the HTML below, save as \`index.html\` and open in your browser:`,
+        });
+
+        const safeHtml = html.replace(/`/g, "\`");
+        await slack.chat.postMessage({
+          channel,
+          thread_ts: messageTs,
+          text: `\`\`\`\n${safeHtml}\n\`\`\``,
         });
 
         console.log(`[${new Date().toISOString()}] Landing page built for "${bizData.name}"`);
