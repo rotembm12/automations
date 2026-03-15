@@ -22,6 +22,7 @@ import {
 } from "../services/linkedin";
 import { findBusinessesWithoutWebsite } from "../services/google-places";
 import { LOCAL_BIZ_CHANNEL, postLocalBizResults } from "../services/slack-local-biz";
+import { fetchBizDetails } from "../services/biz-details";
 
 const POLL_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const TRIGGER_PHRASE = "go fetch videos";
@@ -334,6 +335,60 @@ async function startSocketListener(): Promise<void> {
           channel,
           thread_ts: messageTs,
           text: `LinkedIn search failed: ${(err as Error).message}`,
+        });
+      }
+      return;
+    }
+
+    // ── Get biz details button ──────────────────────────────────────────────
+    if (actionId === "biz_details") {
+      let bizData: { name: string; address: string };
+      try {
+        bizData = JSON.parse(action.value);
+      } catch {
+        await slack.chat.postMessage({ channel, thread_ts: messageTs, text: "Failed to parse business data. Please try again." });
+        return;
+      }
+
+      await slack.chat.postMessage({
+        channel,
+        thread_ts: messageTs,
+        text: `Searching for details on *${bizData.name}*...`,
+      });
+
+      try {
+        const details = await fetchBizDetails(bizData.name, bizData.address);
+
+        const blocks: any[] = [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `*${details.name}*${details.description ? `\n${details.description}` : ""}`,
+            },
+          },
+        ];
+
+        if (details.images.length > 0) {
+          for (const imgUrl of details.images) {
+            blocks.push({ type: "image", image_url: imgUrl, alt_text: details.name });
+          }
+        }
+
+        if (details.sources.length > 0) {
+          const sourceLines = details.sources
+            .map((s) => `• *<${s.link}|${s.title}>*${s.snippet ? `\n  ${s.snippet}` : ""}`)
+            .join("\n");
+          blocks.push({ type: "section", text: { type: "mrkdwn", text: sourceLines } });
+        }
+
+        await slack.chat.postMessage({ channel, thread_ts: messageTs, text: details.name, blocks });
+      } catch (err) {
+        console.error("biz_details fetch failed:", err);
+        await slack.chat.postMessage({
+          channel,
+          thread_ts: messageTs,
+          text: `Failed to fetch details: ${(err as Error).message}`,
         });
       }
       return;
