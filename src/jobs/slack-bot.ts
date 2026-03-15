@@ -3,6 +3,7 @@ import { WebClient } from "@slack/web-api";
 import { readState, writeState } from "../state";
 import { fetchNewClaudeCodeVideos, fetchCreatorVideos } from "../services/youtube";
 import { generateHebrewBlogPost } from "../services/blog";
+import { generateBlogImage } from "../services/image-gen";
 import { postVideoAlert } from "../services/slack-videos";
 import {
   LINKEDIN_CHANNEL,
@@ -464,6 +465,48 @@ async function startSocketListener(): Promise<void> {
           channel,
           thread_ts: messageTs,
           text: `Failed to build landing page: ${(err as Error).message}`,
+        });
+      }
+      return;
+    }
+
+    // ── Generate image button ───────────────────────────────────────────────
+    if (actionId === "generate_image") {
+      const threadTs: string = body.message?.ts ?? body.container?.message_ts;
+
+      let videoData: any;
+      try {
+        videoData = JSON.parse(action.value);
+      } catch (err) {
+        console.error("generate_image: failed to parse action value", err);
+        await slack.chat.postMessage({ channel, text: "Failed to parse video data. Please try again." });
+        return;
+      }
+
+      try {
+        await slack.chat.postMessage({
+          channel,
+          thread_ts: threadTs,
+          text: "🎨 Generating cover image, please wait...",
+        });
+
+        const imageBuffer = await generateBlogImage(videoData);
+
+        await slack.files.uploadV2({
+          channel_id: channel,
+          thread_ts: threadTs,
+          file: imageBuffer,
+          filename: "blog-cover.png",
+          title: `Cover: ${videoData.title}`,
+        });
+
+        console.log(`[${new Date().toISOString()}] Blog image generated for "${videoData.title}"`);
+      } catch (err) {
+        console.error("Failed to generate blog image:", err);
+        await slack.chat.postMessage({
+          channel,
+          thread_ts: threadTs,
+          text: `Failed to generate image: ${(err as Error).message}`,
         });
       }
       return;
