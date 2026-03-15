@@ -426,18 +426,36 @@ async function startSocketListener(): Promise<void> {
           console.error("GitHub Pages publish failed:", err);
         }
 
-        const intro = pageUrl
-          ? `Landing page for *${bizData.name}* 🚀\n🔗 *Live URL* (may take ~1 min to go live): ${pageUrl}\n\nHTML source below — save as \`index.html\` to preview locally:`
-          : `Landing page for *${bizData.name}* 🚀 — save as \`index.html\` and open in your browser:`;
+        if (pageUrl) {
+          // GitHub Pages is live — URL is all we need in Slack
+          await slack.chat.postMessage({
+            channel,
+            thread_ts: messageTs,
+            text: `Landing page for *${bizData.name}* is ready 🚀\n🔗 *Live URL* (may take ~1 min to go live): ${pageUrl}`,
+          });
+        } else {
+          // No GitHub Pages — post HTML in chunks (Slack has a 40K char/message limit)
+          await slack.chat.postMessage({
+            channel,
+            thread_ts: messageTs,
+            text: `Landing page for *${bizData.name}* 🚀 — GitHub Pages not configured, posting HTML directly. Save as \`index.html\` and open in your browser:`,
+          });
 
-        await slack.chat.postMessage({ channel, thread_ts: messageTs, text: intro });
+          // Escape triple-backticks only (single backticks are fine inside code fences)
+          const safeHtml = html.replace(/```/g, "\\`\\`\\`");
+          const CHUNK = 35_000;
+          const parts = Math.ceil(safeHtml.length / CHUNK);
 
-        const safeHtml = html.replace(/`/g, "\\`");
-        await slack.chat.postMessage({
-          channel,
-          thread_ts: messageTs,
-          text: `\`\`\`\n${safeHtml}\n\`\`\``,
-        });
+          for (let i = 0; i < parts; i++) {
+            const chunk = safeHtml.slice(i * CHUNK, (i + 1) * CHUNK);
+            const label = parts > 1 ? ` (part ${i + 1}/${parts})` : "";
+            await slack.chat.postMessage({
+              channel,
+              thread_ts: messageTs,
+              text: `\`\`\`\n${chunk}\n\`\`\`${label}`,
+            });
+          }
+        }
 
         console.log(`[${new Date().toISOString()}] Landing page built for "${bizData.name}"`);
       } catch (err) {
