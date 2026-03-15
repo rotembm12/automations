@@ -20,6 +20,8 @@ function buildBusinessBlock(biz: LocalBusiness): any[] {
   const phoneText = biz.phone ? `📞 ${biz.phone}` : "📞 No phone listed";
   const lines = [typeText, `📍 ${biz.address}`, phoneText, ratingText].filter(Boolean);
 
+  const buttonValue = JSON.stringify({ name: biz.name, address: biz.address });
+
   return [
     {
       type: "section",
@@ -27,6 +29,17 @@ function buildBusinessBlock(biz: LocalBusiness): any[] {
         type: "mrkdwn",
         text: `*<${biz.mapsUrl}|${biz.name}>*\n${lines.join("  ·  ")}`,
       },
+    },
+    {
+      type: "actions",
+      elements: [
+        {
+          type: "button",
+          text: { type: "plain_text", text: "🔍 Get Details", emoji: true },
+          action_id: "biz_details",
+          value: buttonValue,
+        },
+      ],
     },
   ];
 }
