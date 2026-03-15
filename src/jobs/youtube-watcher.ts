@@ -173,6 +173,9 @@ async function startSocketListener(): Promise<void> {
   socketClient.on("message", async ({ event, ack }: any) => {
     await ack();
 
+    // Ignore bot messages (including our own) to prevent feedback loops.
+    if (event.subtype || event.bot_id) return;
+
     const text: string = (event.text ?? "").trim().toLowerCase();
     console.log(`[DEBUG] message event: channel=${event.channel} text="${text}"`);
 
@@ -204,10 +207,15 @@ async function startSocketListener(): Promise<void> {
     if (linkedInJobsMatch || linkedInPostsMatch) {
       if (linkedInChannelId && event.channel !== linkedInChannelId) return;
 
-      if (linkedInJobsMatch) {
-        await handleLinkedInSearch(event.channel, "jobs", linkedInJobsMatch[1].trim());
-      } else if (linkedInPostsMatch) {
-        await handleLinkedInSearch(event.channel, "posts", linkedInPostsMatch[1].trim());
+      try {
+        if (linkedInJobsMatch) {
+          await handleLinkedInSearch(event.channel, "jobs", linkedInJobsMatch[1].trim());
+        } else if (linkedInPostsMatch) {
+          await handleLinkedInSearch(event.channel, "posts", linkedInPostsMatch[1].trim());
+        }
+      } catch (err) {
+        console.error("LinkedIn handleLinkedInSearch failed:", err);
+        await slack.chat.postMessage({ channel: event.channel, text: `LinkedIn search failed: ${(err as Error).message}` }).catch(() => {});
       }
     }
   });
